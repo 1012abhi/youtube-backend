@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "description": "a backend at chai aur code channel = youtube",
   "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "type": "module",
+  "scripts": {  
+    "dev": "nodemon src/index.js"
   },
   "keywords": [
     "javascript",
@@ -12,5 +13,8 @@
     "chai"
   ],
   "author": "abhi maheshwari",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
 }
