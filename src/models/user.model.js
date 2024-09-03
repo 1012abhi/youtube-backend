@@ -30,11 +30,7 @@ const userSchema = new Schema(
             required: true
         },
         coverImage: {
-            type: String,
-            required: true
-        },
-        coverImage: {
-            type: String
+            type: String      //cloudinary url
         },
         watchHistory: [
             {
@@ -62,7 +58,7 @@ userSchema.pre("save", async function (next) {
     if(!this.isModified("password")) return next(); 
 
     // yadi modified hua hai to password encrypt krdo
-    this.password = bcrypt.hash(this.password, 10)
+    this.password = await bcrypt.hash(this.password, 10)
     next()
 })
 
@@ -75,7 +71,7 @@ userSchema.methods.isPasswordCorrect = async function (password) {
 }
 
 // method - ACCESS TOKEN GENERATE and REFRESH TOKEN GENERATE dono hi JWT tokens hai
-userSchema.methods.generateAccessToken = function(){ 
+userSchema.methods.generateAccessToken = function(){ // yaha pe ham this ka use krenge aur this ke ander database ka access hai isiliye to ham aero function nahi likhte hai isme
     // jwt ke ander sign method hai jo ki generate kr deta hai token
     return jwt.sign(
         {
@@ -92,6 +88,8 @@ userSchema.methods.generateAccessToken = function(){
         }
     )
 }
+
+// ye jo refresh token hota hai isme kam information hoti hai kyuki ye baar2 refresh hota rehta hai isiliye isme sir id rakhte hai
 userSchema.methods.generateRefreshToken = function(){
     return jwt.sign(
         {
