@@ -4,6 +4,25 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 
+// yaha par ham asynchandler ka use nahi kr rahe hai kyuki ye hamara internaly method hai yaha par ham koi web request nahi krne wale hai 
+const generateAccessTokenAndRefreshToken = async(userId) => {
+    try {
+        const user = await User.findById(userId)    // find user
+        const accessToken = user.generateAccessToken()
+        const refreshToken = user.generateRefreshToken()
+
+        // add user object me (database me save krwa diya hai)
+        user.refreshToken = refreshToken
+        await user.save({ validateBeforeSave: false })
+
+        return {accessToken, refreshToken}
+
+
+    } catch (error) {
+        throw new ApiError(500, "Something went wrong when generating access token and refresh token")
+    }
+}
+
 const registerUser = asyncHandler( async (req, res) => {
     // res.status(200).json({
     //     message: "ok"
@@ -19,7 +38,7 @@ const registerUser = asyncHandler( async (req, res) => {
     // return res
 
     const { fullName ,email, username, password } = req.body
-    console.log('email: ', email);
+    // console.log('email: ', req.body);
     
     if (
         [fullName, email, username, password].some((field) => field?.trim() === "")
@@ -27,7 +46,7 @@ const registerUser = asyncHandler( async (req, res) => {
         throw new ApiError(400, "All fields are required");   
     }  
 
-    const existedUser = User.findOne({
+    const existedUser = await User.findOne({
         // operator:- dono me se koi bhi mil jaye
         $or:  [{ username }, { email }]
     })
@@ -39,8 +58,15 @@ const registerUser = asyncHandler( async (req, res) => {
 
     // multer ye file ko database me store krake hamare path me save kr dega kyuki hame multer ko bola hai -------->check krlo middleware me 
     // multer wo file apne server pe le aaya hai 
-    const avatarLocalPath = res.files?.avatar[0]?.path;
-    const coverImageLocalPath = req.files?.coverImage[0]?.path;
+    const avatarLocalPath = req.files?.avatar[0]?.path;
+    // const coverImageLocalPath = req.files?.coverImage[0]?.path;   //case (Cannot read properties of undefined):- jab user coverImage nahi bhejega tab ye error aayegi aur ye error aa kyu rhi hai hamne to coverImage required bhi nahi kiya hai to ye erorr option chenning wale question mark ? ki wajag se aa rahi hai 
+    
+    // solution of the coverImage ?
+    let coverImageLocalPath;
+    if (req.files && Array.isArray(req.files.coverImage) &&  req.files.coverImage.length > 0) {
+        coverImageLocalPath = req.files.coverImage[0].path
+    }
+
 
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar file is required");
@@ -81,5 +107,85 @@ const registerUser = asyncHandler( async (req, res) => {
     )
 })
 
+const loginUser = asyncHandler( async (req, res) => {
+    // req body -> data
+    // username or email
+    // find the user
+    // password check
+    // access and refresh token
+    // send cookies
+    // res
 
-export { registerUser }
+    const {email, username, password} = req.body
+
+    if (!username || !email) {
+        throw new ApiError(400, "username or email is required");
+    }
+
+    const user = await User.findOne({
+        $or: [{username}, {email}]
+    })
+
+    if (!user) {
+        throw new ApiError(404, "User does not exist");
+    }   
+
+    const isPasswordValid = await user.isPasswordCorrect(password)
+
+    if (!isPasswordValid) {
+        throw new Error(404, "User does not exist");
+    }
+    // ise await isliye kiya hai kyuki is method ke under bhi database ke kuchh operation ho rhe hai
+    const {accessToken, refreshToken} = await generateAccessTokenAndRefreshToken(user._id)
+
+    // jab hame database se findOne kiye tha to user ke under unwantend fields bhi aa gyi hai like: password
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+    // jab ham cookies bhejte hai to hame options design krne padte hai 
+    // apki cookie ko by default koi bhi modify kr sakta hai frontend pe lekin jab aap httOnly: true, aur seccure: true kr dete hai to aapki cookie ko server se hi modify kr skte hai 
+    const options = {
+        httpOnly: true,  
+        secure: true
+    }
+
+    return res.status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(200, 
+            {
+                user: loggedInUser, accessToken, refreshToken
+            },
+            "User logged In Successfully"
+        )
+    )
+})
+
+const logoutUser = asyncHandler( async (req, res) => {
+    await User.findByIdAndUpdate(
+        req.user._id, 
+        {   
+            $set: {
+                refreshToken: undefined
+            }
+        },
+        {
+            new: true
+        }
+    )
+    
+    const options = {
+        httpOnly: true,  
+        secure: true
+    }
+
+    return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged Out"))
+
+
+})
+
+export { registerUser, loginUser, logoutUser }
