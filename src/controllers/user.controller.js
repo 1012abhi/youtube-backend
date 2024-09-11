@@ -3,6 +3,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
+import jwt from "jsonwebtoken"
 
 // yaha par ham asynchandler ka use nahi kr rahe hai kyuki ye hamara internaly method hai yaha par ham koi web request nahi krne wale hai 
 const generateAccessTokenAndRefreshToken = async(userId) => {
@@ -118,7 +119,7 @@ const loginUser = asyncHandler( async (req, res) => {
 
     const {email, username, password} = req.body
 
-    if (!username || !email) {
+    if (!username && !email) {
         throw new ApiError(400, "username or email is required");
     }
 
@@ -136,8 +137,8 @@ const loginUser = asyncHandler( async (req, res) => {
         throw new Error(404, "User does not exist");
     }
     // ise await isliye kiya hai kyuki is method ke under bhi database ke kuchh operation ho rhe hai
-    const {accessToken, refreshToken} = await generateAccessTokenAndRefreshToken(user._id)
-
+    const {accessToken, refreshToken} = await generateAccessTokenAndRefreshToken(user._id) 
+    
     // jab hame database se findOne kiye tha to user ke under unwantend fields bhi aa gyi hai like: password
     const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
 
@@ -161,12 +162,12 @@ const loginUser = asyncHandler( async (req, res) => {
     )
 })
 
-const logoutUser = asyncHandler( async (req, res) => {
+const logoutUser = asyncHandler( async (req, res) => { 
     await User.findByIdAndUpdate(
         req.user._id, 
         {   
-            $set: {
-                refreshToken: undefined
+            $unset: {
+                refreshToken: 1
             }
         },
         {
@@ -188,4 +189,56 @@ const logoutUser = asyncHandler( async (req, res) => {
 
 })
 
-export { registerUser, loginUser, logoutUser }
+const refreshAccessToken = asyncHandler( async (req, res) => {
+    const incommingRefreshToken = req.cookie.refreshToken || req.body.refreshToken 
+
+    if (!incommingRefreshToken) {
+        throw new ApiError(401, "unauthorized request")
+    }
+
+    try {
+        //Basically, yeh line check karti hai ki token sahi hai ya nahi, aur agar sahi hai to decodedToken se user ke details nikal ke use kar sakte ho
+        const decodedToken = jwt.verify(incommingRefreshToken, REFRESH_TOKEN_SECRET) 
+    
+        const user = await User.findById(decodedToken?._id) // are bhai ise user ki id chahiye to decodedToken user ki id chahiye 
+    
+        if (!user) {
+            throw new ApiError(401, "Invalid refresh token")
+        }
+    
+        // token match ho jayega to new token de denge matlab generate karke bhai
+        if (incommingRefreshToken !== user.refreshToken) {
+            throw new ApiError(401, "Refresh token is expired or used")
+            
+        }
+    
+        const options = {
+            httpOnly: true,
+            secure: true
+        }
+    
+    
+        const { accessToken, newRefreshToken } = await generateAccessTokenAndRefreshToken(user._id)
+    
+        return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", newRefreshToken, options)
+        .json(
+            new ApiResponse(
+                200,
+                {accessToken, refreshToken: newRefreshToken},
+                "Access token refreshed"
+            )
+        )
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid refresh token");
+        
+    }
+
+
+})
+
+
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken }
