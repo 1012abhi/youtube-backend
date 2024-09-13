@@ -353,6 +353,144 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     )
 })
 
+const getUserChannelProfile = asyncHandler( async(req, res) => {
+    // destructure kr liya username ko url se 
+    const {username} = req.params
+
+    if (!username?.trim()) {
+        throw new ApiError(400, "username is missing")
+    }
+
+    const channel = await User.aggregate([
+        {
+            $match: {
+                username: username?.toLowerCase()
+            }
+        },
+        {
+            // kin logo ne subscribe kiya hua hai 
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "channel",
+                as: "subscribers"
+            },
+            // kin channel ko mene subscribe kiys hua hai
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo"
+            },
+        },
+        {
+            // ek additional field add kr dega taki ek hi object me ham sara data bhejde 
+            $addFields: {
+                subscribersCount: {
+                    $size: "$subscribers"
+                },
+                channelsSubscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+                isSubscribed: {
+                    $cond: {
+                        if: {$in: [req.user?._id, "$subscribers.subscriber"]},
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {   // project field ka matlab hai ki jo jo aapko output me dikhana hai 
+            $project: {
+                fullName: 1,
+                username: 1,
+                subscribersCount: 1,
+                channelsSubscribedToCount: 1,
+                isSubscribed,
+                avatar: 1,
+                coverImage: 1,
+                email: 1,
+
+            }
+        }
+    ])
+    
+    if (!channel?.length) {
+        throw new ApiError(404, "Channel does not exists")
+    }
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200, channel[0], "User channel fetched successfully")
+    )
+
+
+
+})
+
+const getWatchHistory = asyncHandler(async(req, res) => {
+    const user = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {   //iske under bahur sari videos aa gyi hai
+            //ab ham watchHistory ke under jayege to watchHistory video se milegi
+            $lookup: {
+                form: "videos",
+                localField: "watchHistory", //jiske under join krana hai 
+                foreignField: "_id",       //jiske sath join krana hai
+                as: "watchHistory",
+                pipeline: [ // ab array ke under user ki users ki sari values aai hai  
+                    {
+                        $lookup: {
+                            form: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            // lekin ab kuch thodi dena hai owner ke under to isliye ham further ek or pipeline lagana hai 
+                            pipeline: [
+                                {
+                                    // jo jo fields owner ke ander dena hai wo dedo
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    // ham jante ki ye sb fields aa to jayege lekin hamare pass aayega kya Array to array me se first value nikalna padega
+                    {
+                        $addFields: {
+                            // aap naya naam bhi add kr sakte ho par me existing firle ko hi overrite kr raha hu 
+                            owner: {
+                                $first: "$owner" // ab fields me nikalna hai 
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "watch history fetched successfully"
+        )
+    )
+})
+
+
 export { registerUser, loginUser, logoutUser, 
     refreshAccessToken, changeCurrentPassword, 
-    getCurrentUser, updateAccountDetails, updateUserAvatar, updateUserCoverImage }
+    getCurrentUser, updateAccountDetails, updateUserAvatar, 
+    updateUserCoverImage, getUserChannelProfile, getWatchHistory }
