@@ -4,6 +4,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 import jwt from "jsonwebtoken"
+import mongoose from "mongoose";
 
 // yaha par ham asynchandler ka use nahi kr rahe hai kyuki ye hamara internaly method hai yaha par ham koi web request nahi krne wale hai 
 const generateAccessTokenAndRefreshToken = async(userId) => {
@@ -134,7 +135,7 @@ const loginUser = asyncHandler( async (req, res) => {
     const isPasswordValid = await user.isPasswordCorrect(password)
 
     if (!isPasswordValid) {
-        throw new Error(404, "User does not exist");
+        throw new ApiError(404, "Incorrect password");
     }
     // ise await isliye kiya hai kyuki is method ke under bhi database ke kuchh operation ho rhe hai
     const {accessToken, refreshToken} = await generateAccessTokenAndRefreshToken(user._id) 
@@ -167,7 +168,7 @@ const logoutUser = asyncHandler( async (req, res) => {
         req.user._id, 
         {   
             $unset: {
-                refreshToken: 1
+                refreshToken: 1 // this removes the field form document
             }
         },
         {
@@ -190,15 +191,15 @@ const logoutUser = asyncHandler( async (req, res) => {
 })
 
 const refreshAccessToken = asyncHandler( async (req, res) => {
-    const incommingRefreshToken = req.cookie.refreshToken || req.body.refreshToken 
-
+    const incommingRefreshToken = req.cookies.refreshToken || req.body.refreshToken 
+    
     if (!incommingRefreshToken) {
         throw new ApiError(401, "unauthorized request")
     }
 
     try {
         //Basically, yeh line check karti hai ki token sahi hai ya nahi, aur agar sahi hai to decodedToken se user ke details nikal ke use kar sakte ho
-        const decodedToken = jwt.verify(incommingRefreshToken, REFRESH_TOKEN_SECRET) 
+        const decodedToken = jwt.verify(incommingRefreshToken, process.env.REFRESH_TOKEN_SECRET) 
     
         const user = await User.findById(decodedToken?._id) // are bhai ise user ki id chahiye to decodedToken user ki id chahiye 
     
@@ -207,7 +208,7 @@ const refreshAccessToken = asyncHandler( async (req, res) => {
         }
     
         // token match ho jayega to new token de denge matlab generate karke bhai
-        if (incommingRefreshToken !== user.refreshToken) {
+        if (incommingRefreshToken !== user?.refreshToken) {
             throw new ApiError(401, "Refresh token is expired or used")
             
         }
@@ -243,8 +244,12 @@ const refreshAccessToken = asyncHandler( async (req, res) => {
 const changeCurrentPassword = asyncHandler(async (req, res) => {
     const {oldPassword, newPassword} = req.body
 
-    const user = await User.findById(res.user?._id)
-    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword) // isme hamne oldpassword hi kyu diya are bhi yahi hamne newpassword de diya ye oldpassword keise aayega
+    const user = await User.findById(req.user?._id)
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+    
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword) // isme hamne oldpassword hi kyu diya are bhai yahi hamne newpassword de diya ye oldpassword keise aayega
 
     if (!isPasswordCorrect) {
         throw new ApiError(400, "Invalid old password")
@@ -376,12 +381,14 @@ const getUserChannelProfile = asyncHandler( async(req, res) => {
                 as: "subscribers"
             },
             // kin channel ko mene subscribe kiys hua hai
+        },
+        {
             $lookup: {
-                from: "subscriptions",
-                localField: "_id",
-                foreignField: "subscriber",
-                as: "subscribedTo"
-            },
+            from: "subscriptions",
+            localField: "_id",
+            foreignField: "subscriber",
+            as: "subscribedTo"
+        },
         },
         {
             // ek additional field add kr dega taki ek hi object me ham sara data bhejde 
@@ -407,7 +414,7 @@ const getUserChannelProfile = asyncHandler( async(req, res) => {
                 username: 1,
                 subscribersCount: 1,
                 channelsSubscribedToCount: 1,
-                isSubscribed,
+                isSubscribed: 1,
                 avatar: 1,
                 coverImage: 1,
                 email: 1,
@@ -440,14 +447,14 @@ const getWatchHistory = asyncHandler(async(req, res) => {
         {   //iske under bahur sari videos aa gyi hai
             //ab ham watchHistory ke under jayege to watchHistory video se milegi
             $lookup: {
-                form: "videos",
+                from: "videos",
                 localField: "watchHistory", //jiske under join krana hai 
                 foreignField: "_id",       //jiske sath join krana hai
                 as: "watchHistory",
                 pipeline: [ // ab array ke under user ki users ki sari values aai hai  
                     {
                         $lookup: {
-                            form: "users",
+                            from: "users",
                             localField: "owner",
                             foreignField: "_id",
                             as: "owner",
