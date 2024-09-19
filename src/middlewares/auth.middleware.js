@@ -24,7 +24,7 @@ export const verifyJWT = asyncHandler(async(req, _, next) => {
         }
         
         req.user = user // req.user se ek user object ya user field banai aur user ke data ko req.user ke ander dal diya
-        console.log(req.user);
+        // console.log(req.user);
         
         next()  
     } catch (error) {

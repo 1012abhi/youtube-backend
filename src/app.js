@@ -25,12 +25,13 @@ app.use(cookieParser());
 // routers most of the time hame middleware ke niche hi import krte hai like this ⬇️
 // routes import 
 import userRouter from './routes/user.routes.js'
+import tweetRouter from './routes/tweet.routes.js'
 
 // routes declarations:- app.get() ka use yaha nahi kr sakte kyuki get ek hi file me use kr skte hai 
 // lekin ab ham sepratlly likh rahe hai to ab router ko lane ke liye middleware laga hoga -- app.use()
 
 app.use("/api/v1/users", userRouter)
-
+app.use("/api/v1/tweet", tweetRouter)
 
 
 // http://localhost:8000/api/v1/users/register

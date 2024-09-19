@@ -1,4 +1,4 @@
-// require('dotenv').config()
+// ryequire('dotenv').config()
 
 import dotenv from 'dotenv'
 import connectDB from "./db/index.js";
